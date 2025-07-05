@@ -10,7 +10,7 @@ import os
 import polyline
 
 # ---------------- API Key ----------------
-API_KEY = "AIzaSyCIWY9bKf5bNuOaINRuCPxxZwJVFxJkNtE"
+API_KEY = "x"
 
 # ---------------- Google Directions Function ----------------
 def get_route_polyline(start_loc, end_loc, api_key):
