@@ -1,27 +1,37 @@
-# analytics.py
+import sqlite3
+import os
 import pandas as pd
-from db_handler import conn  # ✅ Reuse existing DB connection
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "../db/FleetStat.db")
 
 def get_trip_analytics():
-    try:
-        df = pd.read_sql_query("SELECT * FROM trip_info", conn)
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql_query("SELECT * FROM trip_info", conn)
+    conn.close()
 
-        if df.empty:
-            return {
-                "Total Fuel": 0,
-                "Total Distance": 0,
-                "Average Mileage (km/l)": 0
-            }
+    result = {}
 
-        total_fuel = df['fuel_consumption'].sum()
-        total_distance = df['distance'].sum()
-        avg_mileage = total_distance / total_fuel if total_fuel else 0
+    if df.empty:
+        return result
 
-        return {
-            "Total Fuel": round(total_fuel, 2),
-            "Total Distance": round(total_distance, 2),
-            "Average Mileage (km/l)": round(avg_mileage, 2)
-        }
+    total_distance = df["distance"].sum()
+    total_fuel = df["fuel_consumption"].sum()
+    avg_mileage = round(total_distance / total_fuel, 2) if total_fuel > 0 else 0
 
-    except Exception as e:
-        return {"error": str(e)}
+    result["Total Distance"] = round(total_distance, 2)
+    result["Total Fuel"] = round(total_fuel, 2)
+    result["Average Mileage (km/l)"] = avg_mileage
+
+    # Per-trip stats
+    for trip_id in df["trip_id"].unique():
+        trip_df = df[df["trip_id"] == trip_id]
+        d = trip_df["distance"].sum()
+        f = trip_df["fuel_consumption"].sum()
+        m = round(d / f, 2) if f > 0 else 0
+
+        result[f"Total Distance of {trip_id} trip"] = round(d, 2)
+        result[f"Total Fuel used in {trip_id} trip"] = round(f, 2)
+        result[f"Average Mileage in {trip_id} trip (km/l)"] = m
+
+    return result
