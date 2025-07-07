@@ -25,6 +25,33 @@ def insert_trip(vehicle_number, fuel_consumption, trip_date, start_location, end
           lat_start, lon_start, lat_end, lon_end, distance))
     conn.commit()
 
+def Update_vehicle(vehicle_id, vehicle_name, vehicle_number, owner_name, vehicle_type, registration_date):
+    c.execute('''
+        UPDATE vehicle_info
+        SET vehicle_name = ?, vehicle_number = ?, owner_name = ?, vehicle_type = ?, registration_date = ?
+        WHERE vehicle_id = ?
+    ''', (vehicle_name, vehicle_number, owner_name, vehicle_type, registration_date, vehicle_id))
+    conn.commit()
+
+def Update_trip(trip_id, vehicle_number, fuel_consumption, trip_date, start_location, end_location,
+                lat_start, lon_start, lat_end, lon_end, distance):
+    c.execute('''
+        UPDATE trip_info
+        SET vehicle_number = ?, fuel_consumption = ?, trip_date = ?, start_location = ?, end_location = ?,
+            lat_start = ?, lon_start = ?, lat_end = ?, lon_end = ?, distance = ?
+        WHERE trip_id = ?
+    ''', (vehicle_number, fuel_consumption, trip_date, start_location, end_location,
+          lat_start, lon_start, lat_end, lon_end, distance, trip_id))
+    conn.commit()
+
+def delete_vehicle(vehicle_id):
+    c.execute('DELETE FROM vehicle_info WHERE vehicle_id = ?', (vehicle_id,))
+    conn.commit()
+    
+def delete_trip(trip_id):
+    c.execute('DELETE FROM trip_info WHERE trip_id = ?', (trip_id,))
+    conn.commit()
+
 def view_vehicles():
     c.execute('SELECT * FROM vehicle_info')
     return c.fetchall()

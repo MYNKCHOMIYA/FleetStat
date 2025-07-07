@@ -3,6 +3,8 @@ from folium.plugins import HeatMap, MarkerCluster
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import streamlit as st
+from streamlit_folium import st_folium
 
 # ========== 1️⃣ FOLIUM MAPPING FUNCTIONS ==========
 
@@ -42,7 +44,7 @@ def generate_cluster_map(df):
     return m
 
 # ========== 2️⃣ SIMULATED DATA ==========
-# Simulate trip data (for testing)
+
 data = {
     'trip_number': np.arange(1, 21),
     'vehicle_number': [f"RJ14XX{str(i).zfill(4)}" for i in range(1, 21)],
@@ -54,48 +56,40 @@ data = {
 }
 df = pd.DataFrame(data)
 
-# ========== 3️⃣ GENERATE MAPS ==========
+# ========== 3️⃣ DISPLAY MAPS IN STREAMLIT ==========
 
-# Route map for trip 1
-route_map = generate_route_map(
-    df.loc[0, 'lat_start'],
-    df.loc[0, 'lon_start'],
-    df.loc[0, 'lat_end'],
-    df.loc[0, 'lon_end']
-)
-route_map.save("route_map.html")
+st.set_page_config(layout="wide")
+st.title("🗺 FleetStat Maps Preview (Testing Mode)")
 
-# Heatmap of all trips
-heatmap = generate_trip_heatmap(df)
-heatmap.save("heatmap.html")
+tab1, tab2, tab3, tab4 = st.tabs(["Route Map", "Heatmap", "Cluster Map", "Fuel Chart"])
 
-# Cluster map of all trips
-cluster_map = generate_cluster_map(df)
-cluster_map.save("cluster_map.html")
+with tab1:
+    st.subheader("📍 Route Map for Trip 1")
+    route_map = generate_route_map(
+        df.loc[0, 'lat_start'],
+        df.loc[0, 'lon_start'],
+        df.loc[0, 'lat_end'],
+        df.loc[0, 'lon_end']
+    )
+    st_folium(route_map, width=700, height=500)
 
-# ========== 4️⃣ MATPLOTLIB PER-TRIP FUEL CONSUMPTION PLOT ==========
-plt.figure(figsize=(10, 5))
-plt.plot(
-    df['trip_number'],
-    df['fuel_consumption'],
-    label='Fuel Consumption per Trip',
-    color='green',
-    linestyle='-',
-    marker='o'
-)
+with tab2:
+    st.subheader("🔥 Heatmap of All Trips")
+    heatmap = generate_trip_heatmap(df)
+    st_folium(heatmap, width=700, height=500)
 
-plt.title('Fuel Consumption per Trip - FleetStat')
-plt.xlabel('Trip Number')
-plt.ylabel('Fuel Consumption (liters)')
-plt.xticks(df['trip_number'])
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
+with tab3:
+    st.subheader("📌 Cluster Map of All Trips")
+    cluster_map = generate_cluster_map(df)
+    st_folium(cluster_map, width=700, height=500)
 
-# Save plot to a file
-plt.savefig("fuel_consumption_per_trip.png")
-
-# Display in Python (or comment out if running headless)
-plt.show()
-
-print("✅ All visualizations generated successfully.")
+with tab4:
+    st.subheader("⛽ Fuel Consumption Per Trip")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(df['trip_number'], df['fuel_consumption'], label='Fuel Consumption', color='green', linestyle='-', marker='o')
+    ax.set_title('Fuel Consumption per Trip')
+    ax.set_xlabel('Trip Number')
+    ax.set_ylabel('Fuel (liters)')
+    ax.grid(True)
+    ax.legend()
+    st.pyplot(fig)

@@ -8,9 +8,15 @@ from geopy.distance import geodesic
 import folium
 import os
 import polyline
+import streamlit.components.v1 as components
+from dotenv import load_dotenv
+
+
 
 # ---------------- API Key ----------------
-API_KEY = "x"
+
+API_KEY = ""
+
 
 # ---------------- Google Directions Function ----------------
 def get_route_polyline(start_loc, end_loc, api_key):
@@ -57,7 +63,7 @@ def get_road_distance_google(start_loc, end_loc, api_key):
 # ---------------- Imports for Custom Modules ----------------
 from db_handler import insert_vehicle, insert_trip, view_vehicles, view_trips
 from analytics import get_trip_analytics
-from visualize import generate_route_map, generate_trip_heatmap, generate_cluster_map
+from visualize import generate_trip_heatmap
 
 # ---------------- Streamlit Config ----------------
 st.set_page_config(layout="wide")
@@ -121,37 +127,28 @@ elif choice == "Add Trip":
     lon_end = st.number_input("Longitude End")
 
     if st.button("Add Trip"):
-        if start_location and end_location:
+        if start_location.strip() == "" or end_location.strip() == "":
+            st.error("❗ Start and End locations cannot be empty.")
+        else:
             distance_text, distance = get_road_distance_google(start_location, end_location, API_KEY)
             if distance == 0.0:
                 st.error("⚠️ Could not fetch distance. Trip not saved.")
             else:
-                insert_trip(
-                    vehicle_number,
-                    fuel,
-                    trip_date,
-                    start_location,
-                    end_location,
-                    lat_start,
-                    lon_start,
-                    lat_end,
-                    lon_end,
-                    distance
-                )
+                insert_trip(vehicle_number, fuel, trip_date, start_location, end_location, lat_start, lon_start, lat_end, lon_end, distance)
                 st.success(f"✅ Trip added successfully. Distance: {distance_text}")
 
                 m = folium.Map(location=[(lat_start + lat_end) / 2, (lon_start + lon_end) / 2], zoom_start=7)
                 folium.Marker([lat_start, lon_start], tooltip="Start", icon=folium.Icon(color="green")).add_to(m)
                 folium.Marker([lat_end, lon_end], tooltip="End", icon=folium.Icon(color="red")).add_to(m)
 
-                route_points = get_route_polyline(start_location, end_location, API_KEY)
+                origin = f"{lat_start},{lon_start}"
+                destination = f"{lat_end},{lon_end}"
+                route_points = get_route_polyline(origin, destination, API_KEY)
                 if route_points:
                     folium.PolyLine(route_points, color="blue", weight=4).add_to(m)
 
                 st.subheader("🗺 Trip Route")
                 st_folium(m, width=700, height=500)
-        else:
-            st.error("❗ Please enter both start and end locations.")
 
 # ---------------- View Vehicles ----------------
 elif choice == "View Vehicles":
@@ -191,10 +188,7 @@ elif choice == "View Trips":
         start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date)
         end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
 
-        df = df[
-            (pd.to_datetime(df["trip_date"]).dt.date >= start_date) &
-            (pd.to_datetime(df["trip_date"]).dt.date <= end_date)
-        ]
+        df = df[(pd.to_datetime(df["trip_date"]).dt.date >= start_date) & (pd.to_datetime(df["trip_date"]).dt.date <= end_date)]
 
         search_term = st.text_input("Search by Vehicle Number").lower()
         if search_term:
@@ -203,42 +197,43 @@ elif choice == "View Trips":
         st.dataframe(df)
         analytics = get_trip_analytics()
         df_trips = view_trips()
-    if not df_trips.empty:
-        trip_ids = df_trips["trip_id"].tolist()
-        selected_trip_id = st.selectbox("Select Trip ID", trip_ids)
+        if not df_trips.empty:
+            trip_ids = df_trips["trip_id"].tolist()
+            selected_trip_id = st.selectbox("Select Trip ID", trip_ids)
 
-        distance_key = f"Total Distance of {selected_trip_id} trip"
-        fuel_key = f"Total Fuel used in {selected_trip_id} trip"
-        mileage_key = f"Average Mileage in {selected_trip_id} trip (km/l)"
+            trip = df_trips[df_trips["trip_id"] == selected_trip_id].iloc[0]
+            start_loc = trip["start_location"]
+            end_loc = trip["end_location"]
+            lat_start = trip["lat_start"]
+            lon_start = trip["lon_start"]
+            lat_end = trip["lat_end"]
+            lon_end = trip["lon_end"]
 
-        col4, col5, col6 = st.columns(3)
-        col4.metric("🚗 Trip Distance", f"{analytics.get(distance_key, 'N/A')} km")
-        col5.metric("⛽ Fuel Used", f"{analytics.get(fuel_key, 'N/A')} L")
-        col6.metric("⚡ Avg Mileage", f"{analytics.get(mileage_key, 'N/A')} km/L")
+            distance_key = f"Total Distance of {selected_trip_id} trip"
+            fuel_key = f"Total Fuel used in {selected_trip_id} trip"
+            mileage_key = f"Average Mileage in {selected_trip_id} trip (km/l)"
 
-        trip = df_trips[df_trips["trip_id"] == selected_trip_id].iloc[0]
-        start_loc = trip["start_location"]
-        end_loc = trip["end_location"]
-        lat_start = trip["lat_start"]
-        lon_start = trip["lon_start"]
-        lat_end = trip["lat_end"]
-        lon_end = trip["lon_end"]
+            col4, col5, col6 = st.columns(3)
+            col4.metric("🚗 Trip Distance", f"{analytics.get(distance_key, 'N/A')} km")
+            col5.metric("⛽ Fuel Used", f"{analytics.get(fuel_key, 'N/A')} L")
+            col6.metric("⚡ Avg Mileage", f"{analytics.get(mileage_key, 'N/A')} km/L")
 
-        m = folium.Map(location=[(lat_start + lat_end) / 2, (lon_start + lon_end) / 2], zoom_start=7)
+            m = folium.Map(location=[(lat_start + lat_end) / 2, (lon_start + lon_end) / 2], zoom_start=7)
+            folium.Marker([lat_start, lon_start], tooltip="Start", icon=folium.Icon(color="green")).add_to(m)
+            folium.Marker([lat_end, lon_end], tooltip="End", icon=folium.Icon(color="red")).add_to(m)
 
-        folium.Marker([lat_start, lon_start], tooltip="Start", icon=folium.Icon(color="green")).add_to(m)
-        folium.Marker([lat_end, lon_end], tooltip="End", icon=folium.Icon(color="red")).add_to(m)
+            origin = f"{lat_start},{lon_start}"
+            destination = f"{lat_end},{lon_end}"
+            route_points = get_route_polyline(origin, destination, API_KEY)
+            if route_points:
+                folium.PolyLine(route_points, color="blue", weight=4).add_to(m)
+            else:
+                st.warning("⚠️ Could not fetch driving route. Showing only markers.")
 
-        route_points = get_route_polyline(start_loc, end_loc, API_KEY)
-        if route_points:
-            folium.PolyLine(route_points, color="blue", weight=4).add_to(m)
+            st.subheader("🗺 Trip-Specific Route Map")
+            st_folium(m, width=700, height=500)
         else:
-            st.warning("⚠️ Road route could not be fetched.")
-
-        st.subheader("🗺 Road Route on Map")
-        st_folium(m, width=700, height=500)
-    else:
-        st.warning("No trip data available.")
+            st.warning("No trip data available.")
 
 # ---------------- Heatmap ----------------
 elif choice == "Heatmap":
@@ -264,19 +259,12 @@ elif choice == "Per-Trip Analytics":
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(
-            df["trip_id"],
-            df["fuel_consumption"],
-            marker=".",
-            color="black",
-            linestyle="-"
-        )
+        ax.plot(df["trip_id"], df["fuel_consumption"], marker=".", color="black", linestyle="-")
         ax.set_title("Fuel Consumption per Trip")
         ax.set_xlabel("Trip ID")
         ax.set_ylabel("Fuel Consumption (liters)")
         ax.grid(True)
 
         st.pyplot(fig)
-
     else:
         st.warning("No trip data available to plot.")
