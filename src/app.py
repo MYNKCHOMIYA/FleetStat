@@ -10,10 +10,10 @@ import os
 import polyline
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
-
-# ---------------- Load Environment ----------------
+import os
 load_dotenv()
-API_KEY = os.getenv("GOOGLE_API_KEY")
+api_key = os.getenv("GOOGLE_API_KEY")
+
 
 # ---------------- Google Directions Function ----------------
 def get_route_polyline(start_loc, end_loc, api_key):
