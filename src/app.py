@@ -11,6 +11,7 @@ import polyline
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 import os
+# Load environment variables
 load_dotenv()
 api_key = os.getenv("GOOGLE_API_KEY")
 
