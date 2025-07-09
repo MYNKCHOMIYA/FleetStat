@@ -1,28 +1,165 @@
 import streamlit as st
-from datetime import date
+import pandas as pd
 import sqlite3
 import requests
-import pandas as pd
+import joblib
+import folium
+from folium.plugins import HeatMap, MarkerCluster
 from streamlit_folium import st_folium
 from geopy.distance import geodesic
-import folium
+from datetime import datetime, date
 import os
 import polyline
-import streamlit.components.v1 as components
+import matplotlib.pyplot as plt
 from dotenv import load_dotenv
-import os
-# Load environment variables
-load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
+from fpdf import FPDF
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 
+# ================== ENV SETUP =====================
+load_dotenv()   
+API_KEY = os.getenv("GOOGLE_API_KEY")
+EMAIL_USER = os.getenv("EMAIL_USER") 
+EMAIL_PASS = os.getenv("EMAIL_PASS")
+
+# ============== DATABASE CONNECTION ==============
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "../db/FleetStat.db")
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+
+# ============== DARK MODE CONFIG ==============
+if "dark_mode" not in st.session_state:
+    st.session_state.dark_mode = False
+if st.session_state.dark_mode:
+    st.markdown("""
+        <style>
+        body {
+            background-color: #000;
+            color: #eee;
+        }
+        .stApp {
+            background-color: #000;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+
+# ============== LOGIN ======================
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    with st.form("login"):
+        st.title("🔒 FleetStat Login")
+        user = st.text_input("Username")
+        pwd = st.text_input("Password", type="password")
+        login = st.form_submit_button("Login")
+        if login:
+            if user == "admin" and pwd == "admin":
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("❌ Invalid Credentials")
+    st.stop()
+
+# ============== ML MODEL ===================
+@st.cache_resource
+def load_model():
+    try:
+        model_path = os.path.join(BASE_DIR, "ml_models", "fuel_predictor.pkl")
+        return joblib.load(model_path)
+    except Exception as e:
+        st.warning(f"Model loading error: {e}")
+        return None
+
+model = load_model()
+# ============== UI SETUP ===================
+st.set_page_config(layout="wide", page_title="FleetStat Dashboard", page_icon="🚗")
+st.title("🚗 FleetStat - Smarter Fleet Tracking")
+
+with st.sidebar:
+    st.image("logo.png", width=200)
+    st.header("📋 Navigation")
+    menu = ["Dashboard", "Add Vehicle", "Add Trip", "View Vehicles", "View Trips", "Heatmap", "Per-Trip Analytics","Real-Time Tracking", "Analytics", "ML Fuel Predictor", "Import CSV", "Generate PDF"]
+    choice = st.selectbox("Select Option", menu)
+    st.markdown("---")
+    st.info("Tip: Use filters to refine your data view.")
+    dark_toggle = st.toggle("🌗 Dark Mode", value=st.session_state.dark_mode)
+    if dark_toggle != st.session_state.dark_mode:
+     st.session_state.dark_mode = dark_toggle
+     st.rerun()
+
+
+# ============== REAL-TIME TRACKING ==============
+if choice == "Real-Time Tracking":
+    st.subheader("📍 Live Vehicle Tracker")
+    df = pd.read_sql_query("SELECT * FROM trip_info ORDER BY trip_date DESC", conn)
+    if not df.empty:
+        last = df.iloc[-1]
+        m = folium.Map(location=[last['lat_end'], last['lon_end']], zoom_start=12)
+        folium.Marker([last['lat_end'], last['lon_end']], tooltip=f"{last['vehicle_number']}").add_to(m)
+        st_folium(m, width=700)
+    else:
+        st.warning("No trips found.")
+
+# ============== VIEW VEHICLES ======================
+elif choice == "View Vehicles":
+    st.subheader("🚗 Vehicle Records")
+    df = pd.read_sql_query("SELECT * FROM vehicle_info", conn)
+    if not df.empty:
+        st.dataframe(df)
+    else:
+        st.info("No vehicles found.")
+
+# ============== ADD VEHICLE ======================
+elif choice == "Add Vehicle":
+    st.subheader("➕ Register New Vehicle")
+    with st.form("add_veh"):
+        vname = st.text_input("Vehicle Name")
+        vnum = st.text_input("Vehicle Number")
+        owner = st.text_input("Owner")
+        vtype = st.selectbox("Type", ["Car", "Bike", "Truck", "Bus"])
+        regdate = st.date_input("Registration Date")
+        if st.form_submit_button("Add Vehicle"):
+            conn.execute("INSERT INTO vehicle_info(vehicle_name, vehicle_number, owner_name, vehicle_type, registration_date) VALUES (?, ?, ?, ?, ?)", (vname, vnum, owner, vtype, regdate))
+            conn.commit()
+            st.success("Vehicle added ✅")
+
+# ============== IMPORT CSV ======================
+elif choice == "Import CSV":
+    st.subheader("📂 Import Trip Data from CSV")
+    uploaded = st.file_uploader("Upload CSV", type="csv")
+    if uploaded:
+        df = pd.read_csv(uploaded)
+        df.to_sql("trip_info", conn, if_exists="append", index=False)
+        st.success("Trips imported ✅")
+
+# ============== GENERATE PDF ======================
+elif choice == "Generate PDF":
+    st.subheader("🧾 Export Analytics PDF")
+    df = pd.read_sql_query("SELECT * FROM trip_info", conn)
+    if not df.empty:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt="FleetStat Analytics Report", ln=True, align='C')
+        for index, row in df.iterrows():
+            line = f"Trip {row['trip_id']}: {row['vehicle_number']} on {row['trip_date']} - {row['fuel_consumption']}L over {row['distance']}km"
+            pdf.cell(200, 10, txt=line, ln=True)
+        fname = "analytics_report.pdf"
+        pdf.output(fname)
+        with open(fname, "rb") as f:
+            st.download_button("⬇️ Download PDF", f, file_name=fname)
 
 # ---------------- Google Directions Function ----------------
-def get_route_polyline(start_loc, end_loc, api_key):
+def get_route_polyline(start_loc, end_loc,API_KEY):
     url = "https://maps.googleapis.com/maps/api/directions/json"
     params = {
         "origin": start_loc,
         "destination": end_loc,
-        "key": api_key,
+        "key": API_KEY,
         "mode": "driving"
     }
     response = requests.get(url, params=params)
@@ -39,12 +176,12 @@ def get_route_polyline(start_loc, end_loc, api_key):
     return []
 
 # ---------------- Google Distance Function ----------------
-def get_road_distance_google(start_loc, end_loc, api_key):
+def get_road_distance_google(start_loc, end_loc, API_KEY):
     url = "https://maps.googleapis.com/maps/api/distancematrix/json"
     params = {
         "origins": start_loc,
         "destinations": end_loc,
-        "key": api_key,
+        "key": API_KEY,
         "units": "metric"
     }
     response = requests.get(url, params=params)
@@ -62,18 +199,6 @@ def get_road_distance_google(start_loc, end_loc, api_key):
 from db_handler import insert_vehicle, insert_trip, view_vehicles, view_trips
 from analytics import get_trip_analytics
 from visualize import generate_trip_heatmap
-
-# ---------------- Streamlit Config ----------------
-st.set_page_config(layout="wide", page_title="FleetStat Dashboard", page_icon="🚗")
-st.title("🚗 FleetStat - Smarter Fleet Tracking")
-
-# Sidebar menu
-with st.sidebar:
-    st.header("📋 Navigation")
-    menu = ["Dashboard", "Add Vehicle", "Add Trip", "View Vehicles", "View Trips", "Heatmap", "Per-Trip Analytics"]
-    choice = st.selectbox("Select Option", menu)
-    st.markdown("---")
-    st.info("Tip: Use filters to refine your data view.")
 
 # SQLite connection
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -298,3 +423,27 @@ elif choice == "Per-Trip Analytics":
         st.pyplot(fig)
     else:
         st.warning("No trip data available to plot.")
+
+elif choice == "ML Fuel Predictor":
+    st.subheader("📈 Predict Fuel Consumption")
+
+    if model is None:
+        st.error("ML model not loaded. Make sure 'ml_models/fuel_predictor.pkl' exists.")
+    else:
+        st.success("✅ ML Model Loaded: Ready to Predict!")
+        distance = st.number_input("Enter Distance (in km)", min_value=0.0, step=1.0)
+
+        if st.button("Predict Fuel Usage"):
+            try:
+                prediction = model.predict([[distance]])[0]
+                st.success(f"🚗 Estimated Fuel Consumption: **{prediction:.2f} L**")
+            except Exception as e:
+                st.error(f"Prediction error: {e}")
+
+
+
+
+
+
+
+
