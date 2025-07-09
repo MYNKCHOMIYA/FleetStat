@@ -50,6 +50,9 @@ Thumbs.db
 
 # Environment variable files
 .env
+.env
+src/.env
+
 .env.*
 src/.env     # <- Specifically ignore .env in your src/ directory
 
