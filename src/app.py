@@ -82,7 +82,7 @@ st.title("🚗 FleetStat - Smarter Fleet Tracking")
 with st.sidebar:
     st.image("logo.png", width=200)
     st.header("📋 Navigation")
-    menu = ["Dashboard", "Add Vehicle", "Add Trip", "View Vehicles", "View Trips", "Heatmap", "Per-Trip Analytics","Real-Time Tracking", "Analytics", "ML Fuel Predictor", "Import CSV", "Generate PDF"]
+    menu = ["Dashboard", "Add Vehicle", "Add Trip", "View Vehicles", "View Trips", "Per-Trip Analytics","Real-Time Tracking", "Analytics", "ML Fuel Predictor", "Import CSV", "Generate PDF"]
     choice = st.selectbox("Select Option", menu)
     st.markdown("---")
     st.info("Tip: Use filters to refine your data view.")
@@ -390,55 +390,120 @@ elif choice == "View Trips":
         else:
             st.warning("No trip data available.")
 
-# ---------------- Heatmap ----------------
-elif choice == "Heatmap":
-    st.subheader("🌍 Trip Heatmap")
-    df = pd.read_sql_query("SELECT * FROM trip_info", conn)
-
-    if not df.empty:
-        heatmap = generate_trip_heatmap(df)
-        st_folium(heatmap, width=700)
-    else:
-        st.warning("No data to display heatmaps.")
-
 # ---------------- Per-Trip Analytics ----------------
+
 elif choice == "Per-Trip Analytics":
     st.subheader("📊 Per-Trip Fuel Consumption Analysis")
+    st.markdown("### Analyze how much fuel is consumed per trip across your fleet.")
 
-    df = pd.read_sql_query("SELECT trip_id, trip_date, vehicle_number, fuel_consumption FROM trip_info ORDER BY trip_date ASC", conn)
+    df = pd.read_sql_query(
+        "SELECT trip_id, trip_date, vehicle_number, fuel_consumption FROM trip_info ORDER BY trip_date ASC",
+        conn
+    )
 
     if not df.empty:
-        df["trip_date"] = pd.to_datetime(df["trip_date"]).dt.strftime("%Y-%m-%d")
-        st.dataframe(df)
+        df["trip_date"] = pd.to_datetime(df["trip_date"])
+        
+        # Optional filters
+        with st.expander("🔍 Filter trips"):
+            col1, col2 = st.columns(2)
+            with col1:
+                selected_vehicle = st.selectbox("Select Vehicle", options=["All"] + sorted(df["vehicle_number"].unique().tolist()))
+            with col2:
+                date_range = st.date_input("Select Date Range", value=[df["trip_date"].min(), df["trip_date"].max()])
 
-        import matplotlib.pyplot as plt
+        # Apply filters
+        if selected_vehicle != "All":
+            df = df[df["vehicle_number"] == selected_vehicle]
+        df = df[(df["trip_date"] >= pd.to_datetime(date_range[0])) & (df["trip_date"] <= pd.to_datetime(date_range[1]))]
 
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(df["trip_id"], df["fuel_consumption"], marker=".", color="black", linestyle="-")
-        ax.set_title("Fuel Consumption per Trip")
-        ax.set_xlabel("Trip ID")
-        ax.set_ylabel("Fuel Consumption (liters)")
-        ax.grid(True)
+        if not df.empty:
+            # Animated and interactive chart
+            import plotly.express as px
+            fig = px.line(
+                df,
+                x="trip_date",
+                y="fuel_consumption",
+                color="vehicle_number",
+                markers=True,
+                title="🚚 Fuel Consumption Over Time",
+                labels={"trip_date": "Trip Date", "fuel_consumption": "Fuel (liters)", "vehicle_number": "Vehicle"},
+                template="plotly_white",
+            )
+            fig.update_traces(line=dict(width=2), marker=dict(size=8))
+            fig.update_layout(hovermode="x unified", transition_duration=500)
 
-        st.pyplot(fig)
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Stats summary
+            st.markdown("### 📌 Trip Summary Stats")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("🔻 Min Fuel Used", f"{df['fuel_consumption'].min():.2f} L")
+            col2.metric("🔺 Max Fuel Used", f"{df['fuel_consumption'].max():.2f} L")
+            col3.metric("📉 Avg Fuel Used", f"{df['fuel_consumption'].mean():.2f} L")
+
+            st.dataframe(df.sort_values("trip_date"), use_container_width=True)
+        else:
+            st.warning("No trip data found for selected filters.")
     else:
-        st.warning("No trip data available to plot.")
+        st.warning("No trip data available to display.")
 
-elif choice == "ML Fuel Predictor":
-    st.subheader("📈 Predict Fuel Consumption")
 
-    if model is None:
-        st.error("ML model not loaded. Make sure 'ml_models/fuel_predictor.pkl' exists.")
-    else:
-        st.success("✅ ML Model Loaded: Ready to Predict!")
-        distance = st.number_input("Enter Distance (in km)", min_value=0.0, step=1.0)
+# ----------------Ml prections ----------------
+import streamlit as st
+import joblib
 
-        if st.button("Predict Fuel Usage"):
-            try:
-                prediction = model.predict([[distance]])[0]
-                st.success(f"🚗 Estimated Fuel Consumption: **{prediction:.2f} L**")
-            except Exception as e:
-                st.error(f"Prediction error: {e}")
+# Load model once and cache
+@st.cache_resource
+def load_model():
+    # Replace with your model path
+    return joblib.load("ml_models/fuel_predictor.pkl")
+
+model = load_model()
+
+st.title("Fuel Consumption Predictor")
+
+# Initialize session state keys if missing
+if "fuel_prediction" not in st.session_state:
+    st.session_state.fuel_prediction = None
+if "fuel_distance" not in st.session_state:
+    st.session_state.fuel_distance = 0.0
+
+# Input outside form to keep value sticky
+distance = st.number_input(
+    "Enter Distance (in km)",
+    min_value=0.0,
+    step=1.0,
+    value=st.session_state.fuel_distance,
+    key="distance_input"
+)
+
+# Buttons outside form
+col1, col2 = st.columns(2)
+with col1:
+    predict_clicked = st.button("Predict Fuel Usage")
+with col2:
+    reset_clicked = st.button("Reset")
+
+if predict_clicked:
+    try:
+        prediction = model.predict([[distance]])[0]
+        st.session_state.fuel_prediction = prediction
+        st.session_state.fuel_distance = distance
+    except Exception as e:
+        st.error(f"Prediction error: {e}")
+
+if reset_clicked:
+    st.session_state.fuel_prediction = None
+    st.session_state.fuel_distance = 0.0
+
+# Display prediction if available
+if st.session_state.fuel_prediction is not None:
+    st.success(f"Estimated Fuel Consumption: {st.session_state.fuel_prediction:.2f} L")
+
+
+
+    
 
 
 
