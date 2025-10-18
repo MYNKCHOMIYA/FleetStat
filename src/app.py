@@ -64,17 +64,6 @@ if not st.session_state.logged_in:
                 st.error("❌ Invalid Credentials")
     st.stop()
 
-# ============== ML MODEL ===================
-@st.cache_resource
-def load_model():
-    try:
-        model_path = os.path.join(BASE_DIR, "ml_models", "fuel_predictor.pkl")
-        return joblib.load(model_path)
-    except Exception as e:
-        st.warning(f"Model loading error: {e}")
-        return None
-
-model = load_model()
 # ============== UI SETUP ===================
 st.set_page_config(layout="wide", page_title="FleetStat Dashboard", page_icon="🚗")
 st.title("🚗 FleetStat - Smarter Fleet Tracking")
@@ -82,7 +71,7 @@ st.title("🚗 FleetStat - Smarter Fleet Tracking")
 with st.sidebar:
     st.image("logo.png", width=200)
     st.header("📋 Navigation")
-    menu = ["Dashboard", "Add Vehicle", "Add Trip", "View Vehicles", "View Trips", "Per-Trip Analytics","Real-Time Tracking", "Analytics", "ML Fuel Predictor", "Import CSV", "Generate PDF"]
+    menu = ["Dashboard", "Add Vehicle", "Add Trip", "View Vehicles", "View Trips", "Per-Trip Analytics"]
     choice = st.selectbox("Select Option", menu)
     st.markdown("---")
     st.info("Tip: Use filters to refine your data view.")
@@ -92,66 +81,6 @@ with st.sidebar:
      st.rerun()
 
 
-# ============== REAL-TIME TRACKING ==============
-if choice == "Real-Time Tracking":
-    st.subheader("📍 Live Vehicle Tracker")
-    df = pd.read_sql_query("SELECT * FROM trip_info ORDER BY trip_date DESC", conn)
-    if not df.empty:
-        last = df.iloc[-1]
-        m = folium.Map(location=[last['lat_end'], last['lon_end']], zoom_start=12)
-        folium.Marker([last['lat_end'], last['lon_end']], tooltip=f"{last['vehicle_number']}").add_to(m)
-        st_folium(m, width=700)
-    else:
-        st.warning("No trips found.")
-
-# ============== VIEW VEHICLES ======================
-elif choice == "View Vehicles":
-    st.subheader("🚗 Vehicle Records")
-    df = pd.read_sql_query("SELECT * FROM vehicle_info", conn)
-    if not df.empty:
-        st.dataframe(df)
-    else:
-        st.info("No vehicles found.")
-
-# ============== ADD VEHICLE ======================
-elif choice == "Add Vehicle":
-    st.subheader("➕ Register New Vehicle")
-    with st.form("add_veh"):
-        vname = st.text_input("Vehicle Name")
-        vnum = st.text_input("Vehicle Number")
-        owner = st.text_input("Owner")
-        vtype = st.selectbox("Type", ["Car", "Bike", "Truck", "Bus"])
-        regdate = st.date_input("Registration Date")
-        if st.form_submit_button("Add Vehicle"):
-            conn.execute("INSERT INTO vehicle_info(vehicle_name, vehicle_number, owner_name, vehicle_type, registration_date) VALUES (?, ?, ?, ?, ?)", (vname, vnum, owner, vtype, regdate))
-            conn.commit()
-            st.success("Vehicle added ✅")
-
-# ============== IMPORT CSV ======================
-elif choice == "Import CSV":
-    st.subheader("📂 Import Trip Data from CSV")
-    uploaded = st.file_uploader("Upload CSV", type="csv")
-    if uploaded:
-        df = pd.read_csv(uploaded)
-        df.to_sql("trip_info", conn, if_exists="append", index=False)
-        st.success("Trips imported ✅")
-
-# ============== GENERATE PDF ======================
-elif choice == "Generate PDF":
-    st.subheader("🧾 Export Analytics PDF")
-    df = pd.read_sql_query("SELECT * FROM trip_info", conn)
-    if not df.empty:
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt="FleetStat Analytics Report", ln=True, align='C')
-        for index, row in df.iterrows():
-            line = f"Trip {row['trip_id']}: {row['vehicle_number']} on {row['trip_date']} - {row['fuel_consumption']}L over {row['distance']}km"
-            pdf.cell(200, 10, txt=line, ln=True)
-        fname = "analytics_report.pdf"
-        pdf.output(fname)
-        with open(fname, "rb") as f:
-            st.download_button("⬇️ Download PDF", f, file_name=fname)
 
 # ---------------- Google Directions Function ----------------
 def get_route_polyline(start_loc, end_loc,API_KEY):
@@ -448,62 +377,6 @@ elif choice == "Per-Trip Analytics":
     else:
         st.warning("No trip data available to display.")
 
-
-# ----------------Ml prections ----------------
-import streamlit as st
-import joblib
-
-# Load model once and cache
-@st.cache_resource
-def load_model():
-    # Replace with your model path
-    return joblib.load("ml_models/fuel_predictor.pkl")
-
-model = load_model()
-
-st.title("Fuel Consumption Predictor")
-
-# Initialize session state keys if missing
-if "fuel_prediction" not in st.session_state:
-    st.session_state.fuel_prediction = None
-if "fuel_distance" not in st.session_state:
-    st.session_state.fuel_distance = 0.0
-
-# Input outside form to keep value sticky
-distance = st.number_input(
-    "Enter Distance (in km)",
-    min_value=0.0,
-    step=1.0,
-    value=st.session_state.fuel_distance,
-    key="distance_input"
-)
-
-# Buttons outside form
-col1, col2 = st.columns(2)
-with col1:
-    predict_clicked = st.button("Predict Fuel Usage")
-with col2:
-    reset_clicked = st.button("Reset")
-
-if predict_clicked:
-    try:
-        prediction = model.predict([[distance]])[0]
-        st.session_state.fuel_prediction = prediction
-        st.session_state.fuel_distance = distance
-    except Exception as e:
-        st.error(f"Prediction error: {e}")
-
-if reset_clicked:
-    st.session_state.fuel_prediction = None
-    st.session_state.fuel_distance = 0.0
-
-# Display prediction if available
-if st.session_state.fuel_prediction is not None:
-    st.success(f"Estimated Fuel Consumption: {st.session_state.fuel_prediction:.2f} L")
-
-
-
-    
 
 
 
